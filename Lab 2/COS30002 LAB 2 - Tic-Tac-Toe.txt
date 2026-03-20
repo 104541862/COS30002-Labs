@@ -1,0 +1,9 @@
+COS30002 LAB 2 - Tic-Tac-Toe
+
+The program will initialise all possible winning combinations of board indices as tuples (for example, the first [index 0], fifth [index 4] and ninth [index 8] indices are a winning combination). It will also initialise an empty board which can then be populated with Xs and Os. A move consists of getting a terminal input from the player (1-9) or an input from the AI (see below for details) and checking whether or not the board is in a winning condition. If it is, the program will print a congratulations to the winner (even if said winner isn't human) and terminate. 
+
+The program will allow the user to choose their name and select between one of two different AI opponents. The first AI is simply random - it chooses a position on the board at random. This choice will undergo validation to ensure that it is not already occupied - if it is, the AI can choose randomly again until it does choose a space which isn't occupied already. The second AI follows a list of logic, in this order:
+- Append 3: if a pair (i.e. two connected Xs or Os) is spotted, take the space at the end. This either stops the opposition from winning or wins the game.
+- Take center: takes the center space. If the center space is already occupied, see next.
+- Take corner: picks a random corner space. If all are occupied, see next.
+- Take edge: picks a random edge space.

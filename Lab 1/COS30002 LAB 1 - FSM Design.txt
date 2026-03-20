@@ -1,0 +1,15 @@
+COS30002 LAB 1 - FSM Design 
+Edward Herrod 104541862
+
+States: 
+- Drilling (Costs NRG, Gain ORE)
+- Selling (Costs ORE, Gain MON)
+- Recharging (Costs MON, Gain NRG)
+
+Variables: 
+- Energy (NRG)
+- Ore (ORE)
+- Money (MON)
+
+Drill starts with enough money to recharge and full energy so that it doesn't die before it can sell enough to recharge and become self-sustaining.
+When low on energy, recharge - this takes the highest priority. With enough energy, drill ore. When ore reaches capacity of 100, sell. 
