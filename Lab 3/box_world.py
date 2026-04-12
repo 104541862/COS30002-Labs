@@ -56,6 +56,21 @@ class Box(object):
 			#border_color=COLOUR_NAMES["GREY"],
 			batch=window.get_batch()
 		)
+		
+		self.border_lines = []
+
+		for i in range(len(hex_points)):
+			x1, y1 = hex_points[i]
+			x2, y2 = hex_points[(i + 1) % len(hex_points)]  # wrap around
+
+			line = pyglet.shapes.Line(
+				x1, y1,
+				x2, y2, 
+				thickness=2,
+				color=COLOUR_NAMES["GREY"],
+				batch=window.get_batch()
+			)
+			self.border_lines.append(line)
 
 		# The label describes and shows the box's index
 		self.label = pyglet.text.Label(
@@ -133,8 +148,8 @@ class BoxWorld(object):
 		grid_width = (x_boxes - 1) * (HEX_WIDTH * 0.75) + HEX_WIDTH
 		grid_height = y_boxes * HEX_HEIGHT + (HEX_HEIGHT / 2)
 
-		offset_x = (window_width - grid_width) / 2
-		offset_y = (window_height - grid_height) / 2
+		offset_x = (window_width - grid_width)
+		offset_y = (window_height - grid_height)
 
 		for i in range(len(self.boxes)):
 			col = i % x_boxes

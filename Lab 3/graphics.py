@@ -1,4 +1,5 @@
 import pyglet
+from pyglet.gl import glClearColor
 
 COLOUR_NAMES = {
 	'BLACK':  (000, 000, 000, 255),
@@ -125,3 +126,4 @@ settings = {
 	}
 	
 window = GameWindow(**settings)
+glClearColor(0.9, 0.9, 1, 1)
