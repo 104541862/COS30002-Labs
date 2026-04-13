@@ -6,11 +6,14 @@ import pyglet
 from point2d import Point2D
 from graph import SparseGraph, Node, Edge
 from searches import SEARCHES
+from agent import Agent
 
 box_types = {
-	"CLEAR":{"symbol":'.', "cost":{"CLEAR":1, "MUD":2,"WATER":5}, "colour":"WHITE"},
-	"MUD":{"symbol":'m', "cost":{"CLEAR":2, "MUD":4,"WATER":9}, "colour":"BROWN"},
-	"WATER":{"symbol":'~', "cost":{"CLEAR":5, "MUD":9,"WATER":10}, "colour":"AQUA"},
+	"CLEAR":{"symbol":'.', "cost":{"CLEAR":1, "ASPHALT":0, "MUD":2, "WATER":5, "HONEY":8}, "colour":"WHITE"},
+	"ASPHALT":{"symbol":'_', "cost":{"CLEAR":0, "ASPHALT":0, "MUD":1, "WATER":2, "HONEY":3}, "colour":"LIGHT_GREY"},
+	"MUD":{"symbol":'m', "cost":{"CLEAR":2, "ASPHALT":1, "MUD":4, "WATER":9, "HONEY":15}, "colour":"BROWN"},
+	"WATER":{"symbol":'~', "cost":{"CLEAR":5, "ASPHALT":2, "MUD":9, "WATER":10, "HONEY":18}, "colour":"AQUA"},
+	"HONEY":{"symbol":'-', "cost":{"CLEAR":8, "ASPHALT":3, "MUD":15, "WATER":18, "HONEY":25}, "colour":"ORANGE"},
 	"WALL":{"symbol":'X', "colour":"GREY"},
 }
 
@@ -141,6 +144,8 @@ class BoxWorld(object):
 		self.wx = (window_width-1) // self.x_boxes
 		self.wy = (window_height-1) // self.y_boxes 
 
+		self.agents = []
+
 		HEX_SIZE = box_width / 2
 		HEX_WIDTH = HEX_SIZE * 2
 		HEX_HEIGHT = math.sqrt(3) * HEX_SIZE
@@ -149,7 +154,7 @@ class BoxWorld(object):
 		grid_height = y_boxes * HEX_HEIGHT + (HEX_HEIGHT / 2)
 
 		offset_x = (window_width - grid_width)
-		offset_y = (window_height - grid_height)
+		offset_y = (window_height - grid_height) / 2
 
 		for i in range(len(self.boxes)):
 			col = i % x_boxes
@@ -317,6 +322,9 @@ class BoxWorld(object):
 						batch=window.get_batch("edges")
 					)
 				)
+	
+	def get_enemy_agents(self, team):
+		return [a for a in self.agents if a.team != team and a.alive]
 
 	def set_start(self, idx):
 		'''Set the start box based on its index idx value. '''
@@ -407,6 +415,10 @@ class BoxWorld(object):
 					)
 				)
 
+	def update_agents(self, dt):
+		for agent in self.agents:
+			agent.update(dt)
+
 
 	@classmethod
 	def FromFile(cls, filename ):
@@ -438,7 +450,16 @@ class BoxWorld(object):
 			assert len(bits) == nx, "Number of columns doesn't match data."
 			for bit in bits:
 				bit = bit.strip()
-				world.boxes[idx].set_type(bit)
+				if bit == "A":
+					world.agents.append(Agent(world, world.boxes[idx], team=0, role="attacker"))
+				elif bit == "D":
+					world.agents.append(Agent(world, world.boxes[idx], team=0, role="defender"))
+				elif bit == "B":
+					world.agents.append(Agent(world, world.boxes[idx], team=1, role="attacker"))
+				elif bit == "E":
+					world.agents.append(Agent(world, world.boxes[idx], team=1, role="defender"))
+				else:
+					world.boxes[idx].set_type(bit)
 				idx += 1
 		world.reset_navgraph()
 		return world

@@ -5,6 +5,7 @@ import pyglet
 from box_world import BoxWorld, search_modes
 from graphics import window
 
+
 # MouseModes enumerates tile types based on key presses
 class MouseModes(Enum):
 		CLEAR = 	pyglet.window.key._1
@@ -24,6 +25,7 @@ class SearchModes(Enum):
 class Game():
 	def __init__(self, map):
 		self.world = BoxWorld.FromFile(map)
+		pyglet.clock.schedule_interval(self.world.update_agents, 1/60.0)
 		# Start out with MouseModes on CLEAR
 		self.mouse_mode = MouseModes.CLEAR
 		window._update_label('mouse', 'Click to place: '+self.mouse_mode.name)
