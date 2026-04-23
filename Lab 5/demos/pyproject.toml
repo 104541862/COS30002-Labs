@@ -1,0 +1,9 @@
+[project]
+name = "09-lab-planetwars"
+version = "2026.4.20"
+description = "Deceptive PlanetWars Simulation for COS30002 AI for Games"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pyglet>=2.1.14",
+]
