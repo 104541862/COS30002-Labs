@@ -90,9 +90,11 @@ To run these two bots against one another, use:
 python main.py --gui -p BestWorst Rando -m map001
 
 ADDITIONS BY EDWARD HERROD: 
+Slightly updated graphics.
+
 2 bots: 
-- "Uninformed" who sends from the planet with the most of their ships to the enemy planet with the least amount defending it (same as BestWorst from the lab).
-- "Opportunist" who attacks enemies then the closest neutral planets.
+- "Uninformed" who expands peacefully and does not attack the enemy until all planets are occupied. Naive as heck.
+- "Opportunist" who focuses first on aggressiveness and expansion where possible, then plays defensively until it reaches a certain size before finishing the game with an all-out assault on enemy planets. It can also reinforce itself where necessary.
 
 To run these two bots against one another, use:
 python main.py --gui -p Opportunist Uninformed -m map001
