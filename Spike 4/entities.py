@@ -163,12 +163,12 @@ class Fleet(Entity):
 		# Cache the heading angle since it is unlikely to change tick-to-tick.
 		self.heading = math.atan2((self.dest.y-self.y),(self.dest.x-self.x))
 
-	# def in_range(self, entities, ignoredest=True):
-	# 	result = super(Fleet, self).in_range(entities)
-	# 	if (not ignoredest) and (self.turns_remaining == 1) and (self.dest not in result):
-	# 		result.append(self.dest)
-	# 	return result
-
+	def in_range(self, entities, ignoredest=True):
+		result = super(Fleet, self).in_range(entities)
+		if (not ignoredest) and (self.turns_remaining == 1) and (self.dest not in result):
+			result.append(self.dest)
+		return result
+	
 	def vision_range(self):
 		"""Return the vision range based on fleet ship count."""
 		return 50+self.ships*2.5
