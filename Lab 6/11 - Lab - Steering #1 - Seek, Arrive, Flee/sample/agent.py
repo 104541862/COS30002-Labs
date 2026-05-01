@@ -31,7 +31,7 @@ class Agent(object):
         'fast': 2.0,
     }
 
-    def __init__(self, world=None, scale=30.0, mass=2.0, mode='seek'): # mass changed from 1.0
+    def __init__(self, world=None, scale=30.0, mass=2.0, color='LIGHT_BLUE', mode='seek'): # mass changed from 1.0
         # keep a reference to the world object
         self.world = world
         self.mode = mode
@@ -47,7 +47,7 @@ class Agent(object):
         # limits?
         self.max_speed = 250.0 # CHANGED from 2500.0
         # data for drawing this agent
-        self.color = 'ORANGE'
+        self.color = color
         self.vehicle_shape = [
             Point2D(-10,  6),
             Point2D( 10,  0),
@@ -78,7 +78,7 @@ class Agent(object):
         elif mode == 'pursuit':
             accel = self.pursuit(self.world.hunter)
         else:
-            accel = Vector2D()
+            accel = self.seek(target_pos)
         self.acceleration = accel
         return accel
 
@@ -148,5 +148,18 @@ class Agent(object):
     def pursuit(self, evader):
         ''' this behaviour predicts where an agent will be in time T and seeks
             towards that point to intercept it. '''
-## OPTIONAL EXTRA... pursuit (you'll need something to pursue!)
-        return Vector2D()
+        if evader:
+            to_evader = evader.pos - self.pos
+            dist = to_evader.length()
+
+            if self.speed() > 0:
+                t = dist / self.speed()
+            else:
+                t = 0
+            
+            future_pos = evader.pos + evader.vel * t
+
+            return self.seek(future_pos)
+        else:
+            print("NO EVADER DETECTED.")
+            return Vector2D()

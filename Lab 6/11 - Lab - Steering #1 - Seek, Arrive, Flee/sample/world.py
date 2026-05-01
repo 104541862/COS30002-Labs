@@ -67,10 +67,12 @@ class World(object):
 			self.target.y = y
 	
 	def input_keyboard(self, symbol, modifiers):
+		evaderDown = False
 		if symbol == pyglet.window.key.P:
 			self.paused = not self.paused
-		if symbol == pyglet.window.key.SPACE:
-			self.agents.append(Agent(self))
+		if symbol == pyglet.window.key.SPACE and not evaderDown:
+			self.agents.append(Agent(self, color='YELLOW', mode='evader'))
+			self.hunter = self.agents[1]
+			evaderDown = True
 		elif symbol in AGENT_MODES:
-			for agent in self.agents:
-				agent.mode = AGENT_MODES[symbol]
+			self.agents[0].mode = AGENT_MODES[symbol]
