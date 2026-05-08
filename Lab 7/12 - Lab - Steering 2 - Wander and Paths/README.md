@@ -33,3 +33,8 @@ uv add pyglet
 ## Attribution
 - Original code by Clinton Woodward, James Bonner, and Steve Dower.
 - Comments and code refactored by **Enrique Ketterer** <ekettererortiz@swin.edu.au> - S1 2026.
+
+Additions by Edward Herrod:
+Hit SPACE to add the second evader agent.
+Hit 9 to have that agent follow its own path.
+Hit R to randomise all of the paths.
