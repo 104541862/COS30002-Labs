@@ -86,6 +86,8 @@ class Agent(object):
             Point2D( 10,  0),
             Point2D(-10, -6)
         ]
+        # List of hiding spot candidates
+        self.debug_hide_candidates = []
         
         # Main vehicle primitive
         self.vehicle = pyglet.shapes.Triangle(
@@ -258,7 +260,7 @@ class Agent(object):
                 continue
 
             direction = to_rock.normalise()
-            hide_pos = rock.pos + direction * (rock.radius + buffer)
+            hide_pos = rock.pos + direction * (rock.hit_radius + buffer)
 
             # store candidate BEFORE filtering
             self._debug_candidates.append((rock.pos, hide_pos))
@@ -340,7 +342,7 @@ class Agent(object):
             dist_to_path = (rock.pos - closest_point).length()
 
             # check if rock blocks path
-            if dist_to_path <= rock.radius + 10:
+            if dist_to_path <= rock.hit_radius:
                 if projection < closest_t:
                     closest_t = projection
                     closest_blocker = rock
@@ -412,7 +414,7 @@ class Agent(object):
         for rock in self.world.rocks:
             dist = (rock.pos - ahead).length()
 
-            if dist < rock.radius + 10:
+            if dist < rock.hit_radius + 10:
                 if dist < min_dist:
                     min_dist = dist
                     most_threatening = rock
@@ -452,7 +454,7 @@ class Agent(object):
             closest_point = start + direction * projection
             dist_to_line = (rock.pos - closest_point).length()
 
-            if dist_to_line <= rock.radius + 10:
+            if dist_to_line <= rock.hit_radius:
                 return False  # blocked
 
         return True
@@ -464,7 +466,7 @@ class Agent(object):
             if rock is ignore:
                 continue
 
-            if (point - rock.pos).length() <= rock.radius:
+            if (point - rock.pos).length() <= rock.hit_radius:
                 return True
 
         return False
@@ -476,7 +478,7 @@ class Agent(object):
             to_agent = self.pos - rock.pos
             dist = to_agent.length()
 
-            min_dist = rock.radius + self.scale.x  # agent radius approx
+            min_dist = rock.hit_radius + self.scale.x * 0.5
 
             if dist < min_dist and dist > 0.0001:
                 # push agent out of rock
@@ -502,34 +504,92 @@ class Agent(object):
         return world_pt
     
     def update_hide_debug(self):
+
+        # clear previous candidate visuals
+        for marker, line1, line2 in self.debug_hide_candidates:
+            marker.visible = False
+            line1.visible = False
+            line2.visible = False
+
         if self.mode != 'hide' or not hasattr(self, "_debug_candidates"):
             return
 
-        for i, (rock_pos, hide_pos) in enumerate(self._debug_candidates):
-            pass
+        hunter = self.world.hunter
 
+        # create visuals if needed
+        while len(self.debug_hide_candidates) < len(self._debug_candidates):
+
+            marker = pyglet.shapes.Star(
+                0, 0,
+                6, 4, 2,
+                color=COLOUR_NAMES['LIGHT_GREEN'],
+                batch=window.get_batch("info")
+            )
+
+            line1 = pyglet.shapes.Line(
+                0, 0, 0, 0,
+                color=COLOUR_NAMES['GREEN'],
+                batch=window.get_batch("info")
+            )
+
+            line2 = pyglet.shapes.Line(
+                0, 0, 0, 0,
+                color=COLOUR_NAMES['YELLOW'],
+                batch=window.get_batch("info")
+            )
+
+            self.debug_hide_candidates.append((marker, line1, line2))
+
+        # render every candidate
+        for i, (rock_pos, hide_pos) in enumerate(self._debug_candidates):
+
+            marker, line1, line2 = self.debug_hide_candidates[i]
+
+            marker.visible = True
+            line1.visible = True
+            line2.visible = True
+
+            # hunter -> obstacle
+            line1.x = hunter.pos.x
+            line1.y = hunter.pos.y
+            line1.x2 = rock_pos.x
+            line1.y2 = rock_pos.y
+
+            # obstacle -> hiding spot
+            line2.x = rock_pos.x
+            line2.y = rock_pos.y
+            line2.x2 = hide_pos.x
+            line2.y2 = hide_pos.y
+
+            # hiding spot marker
+            marker.x = hide_pos.x
+            marker.y = hide_pos.y
+
+        # highlight chosen hiding spot
         if hasattr(self, "_debug_selected_rock") and self._debug_selected_rock:
 
             rock = self._debug_selected_rock
 
-            # recompute final hide position for consistency
-            to_rock = rock.pos - self.world.hunter.pos
-            if to_rock.length() > 0:
-                direction = to_rock.normalise()
-                hide_pos = rock.pos + direction * (rock.radius + 50.0)
+            to_rock = rock.pos - hunter.pos
 
-                # --- hunter -> obstacle line ---
-                self.debug_hide_line.x = self.world.hunter.pos.x
-                self.debug_hide_line.y = self.world.hunter.pos.y
+            if to_rock.length() > 0:
+
+                direction = to_rock.normalise()
+
+                best_hide = rock.pos + direction * (rock.hit_radius + 50.0)
+
+                # selected line
+                self.debug_hide_line.x = hunter.pos.x
+                self.debug_hide_line.y = hunter.pos.y
                 self.debug_hide_line.x2 = rock.pos.x
                 self.debug_hide_line.y2 = rock.pos.y
 
-                # --- obstacle -> hide extension ---
+                # selected extension
                 self.debug_extend_line.x = rock.pos.x
                 self.debug_extend_line.y = rock.pos.y
-                self.debug_extend_line.x2 = hide_pos.x
-                self.debug_extend_line.y2 = hide_pos.y
+                self.debug_extend_line.x2 = best_hide.x
+                self.debug_extend_line.y2 = best_hide.y
 
-                # --- hide marker ---
-                self.debug_hide_marker.x = hide_pos.x
-                self.debug_hide_marker.y = hide_pos.y
+                # selected marker
+                self.debug_hide_marker.x = best_hide.x
+                self.debug_hide_marker.y = best_hide.y

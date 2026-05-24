@@ -165,8 +165,14 @@ class World(object):
 
 class Rock:
     def __init__(self, x, y, radius, color="LIGHT_GREY"):
+
         self.pos = Vector2D(x, y)
+
+        # visual size
         self.radius = radius
+
+        # actual collision size
+        self.hit_radius = radius * 0.8
 
         self.shape = pyglet.shapes.Circle(
             x, y,
@@ -174,7 +180,3 @@ class Rock:
             color=COLOUR_NAMES[color],
             batch=window.get_batch("main")
         )
-
-    def point_inside_rock(self, point):
-        # Check if point is within the radius of the circle and return True if that is the case
-        return (point - self.pos).length() <= self.radius
