@@ -1,6 +1,6 @@
-# Autonomous Agent Steering - Lab 12
+# Autonomous Agent Steering - Spike 5
 
-This project is a pedagogical simulation of autonomous agent steering behaviours using Python and the Pyglet library. It demonstrates fundamental AI concepts such as Seek, Flee, Arrive, Wander, and Path Following.
+This project is a pedagogical simulation of autonomous agent steering behaviours using Python and the Pyglet library. It demonstrates fundamental AI concepts such as Seek, Flee, Arrive, Wander, and Path Following. The main aim of this spike is to demonstrate a working simulation of a hunter and a prey agents navigating a toroidal world with multiple circular objects (“rocks”).
 
 ## Features
 - **Steering Behaviours**: Implementations for Seek, Arrive (Slow/Normal/Fast), and placeholders for Flee, Pursuit, Wander, and Path Following.
@@ -9,15 +9,6 @@ This project is a pedagogical simulation of autonomous agent steering behaviours
 - **Interactive Controls**: Move the target with the mouse and change agent modes via keyboard.
 
 ## Key Bindings
-- `1`: Seek Mode
-- `2`: Arrive Slow
-- `3`: Arrive Normal
-- `4`: Arrive Fast
-- `5`: Flee Mode
-- `6`: Pursuit Mode
-- `7`: Follow Path Mode
-- `8`: Wander Mode
-- `P`: Pause/Resume Simulation
 - `I`: Toggle Debug Information (Vectors and Info Batch)
 
 ## Technical Requirements
@@ -35,6 +26,4 @@ uv add pyglet
 - Comments and code refactored by **Enrique Ketterer** <ekettererortiz@swin.edu.au> - S1 2026.
 
 Additions by Edward Herrod:
-Hit SPACE to add the second evader agent.
-Hit 9 to have that agent follow its own path.
-Hit R to randomise all of the paths.
+Hit C to randomise the obstacle positions (don't worry, this doesn't hurt our agents)
