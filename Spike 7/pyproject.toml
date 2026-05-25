@@ -1,0 +1,9 @@
+[project]
+name = "12-lab-steering-2-wander-and-paths"
+version = "2026.5.5.0329"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pyglet>=2.1.14",
+]
