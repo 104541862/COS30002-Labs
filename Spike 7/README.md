@@ -35,6 +35,5 @@ uv add pyglet
 - Comments and code refactored by **Enrique Ketterer** <ekettererortiz@swin.edu.au> - S1 2026.
 
 Additions by Edward Herrod:
-Hit SPACE to add the second evader agent.
-Hit 9 to have that agent follow its own path.
-Hit R to randomise all of the paths.
+Hit Q/E to switch between weapon types. 
+Left click to shoot. The agent aims automatically.
