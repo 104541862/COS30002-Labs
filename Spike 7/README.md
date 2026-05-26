@@ -1,4 +1,4 @@
-# Autonomous Agent Steering - Lab 12
+# Agent Marksmanship: Task 15
 
 This project is a pedagogical simulation of autonomous agent steering behaviours using Python and the Pyglet library. It demonstrates fundamental AI concepts such as Seek, Flee, Arrive, Wander, and Path Following.
 

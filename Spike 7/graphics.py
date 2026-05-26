@@ -297,7 +297,7 @@ class GameWindow(pyglet.window.Window):
         # Standard UI labels
         self.labels = {
             'mode':   pyglet.text.Label('', x=200, y=self.height-20, color=COLOUR_NAMES['WHITE']),
-            'status': pyglet.text.Label('', x=400, y=self.height-20, color=COLOUR_NAMES['WHITE']) 
+            'status': pyglet.text.Label('', x=self.width-200, y=self.height-20, color=COLOUR_NAMES['WHITE'], batch=self.batches["info"]) 
         }
         self._add_handlers()
 
@@ -337,8 +337,6 @@ class GameWindow(pyglet.window.Window):
                 self.batches["info"].draw()
             # Draw UI elements
             self.fps_display.draw()
-            for label in self.labels.values():
-                label.draw()
         
     def get_batch(self, batch_name="main"):
         return self.batches.get(batch_name, self.batches["main"])
