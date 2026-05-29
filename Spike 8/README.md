@@ -36,4 +36,5 @@ uv add pyglet
 
 Additions by Edward Herrod:
 Hit Q/E to switch between weapon types. 
-Left click to shoot. The agent aims automatically.
+The agent aims and shoots automatically.
+Hit T to randomise the target's position (or spawn a new one if it has died)
