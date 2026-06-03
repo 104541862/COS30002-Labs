@@ -29,6 +29,16 @@ COLOUR_NAMES = {
     'LIGHT_BLUE': (150, 150, 255, 255),
     'LIGHT_GREY': (200, 200, 200, 255),
     'LIGHT_PINK': (255, 230, 230, 255),
+    'PLAYER_BLUE': (66, 135, 245, 255),
+    'ENEMY_BROWN': (150, 100, 50, 255),
+    'ENEMY_GREY': (120, 120, 120, 255),
+    'ENEMY_TEAL': (0, 150, 150, 255),
+    'ENEMY_YELLOW': (220, 220, 100, 255),
+    'ENEMY_RED': (200, 50, 50, 255),
+    'ENEMY_GREEN': (50, 200, 50, 255),
+    'ENEMY_PURPLE': (150, 50, 150, 255),
+    'ENEMY_WHITE': (220, 220, 220, 255),
+    'ENEMY_BLACK': (30, 30, 30, 255),
 }
 
 class ShapeGroup:
@@ -309,6 +319,13 @@ class GameWindow(pyglet.window.Window):
                 game.input_mouse(x, y, button, modifiers)
 
         @self.event
+        def on_mouse_motion(x, y, dx, dy):
+            from game import game
+            if game:
+                game.world.mouse_pos.x = x
+                game.world.mouse_pos.y = y
+
+        @self.event
         def on_key_press(symbol, modifiers):
             # Toggle debug info with 'I'
             if symbol == pyglet.window.key.I:
@@ -317,6 +334,12 @@ class GameWindow(pyglet.window.Window):
             from game import game
             if game:
                 game.input_keyboard(symbol, modifiers)
+
+        @self.event
+        def on_key_release(symbol, modifiers):
+            from game import game
+            if game:
+                game.world.input_key_release(symbol, modifiers)
 
         @self.event
         def on_draw():
@@ -336,7 +359,7 @@ class GameWindow(pyglet.window.Window):
 # Window creation occurs at module level to provide a global graphical context.
 settings = {
     'width': 1600,
-    'height': 900,
+    'height': 880,
     'vsync': True,
     'resizable': False,
     'caption': "D-Level Custom Project",

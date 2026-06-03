@@ -15,10 +15,10 @@ game = None
 class Game():
     """Main game application class."""
 
-    def __init__(self):
+    def __init__(self, map_filename):
         # Initialise the world based on the window size
-        self.world = World(window.width, window.height)
-        
+        self.world = World(window.width, window.height, map_filename)
+
         # Ensure the world is active upon startup
         self.world.paused = False
 

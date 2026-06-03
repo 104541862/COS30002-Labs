@@ -5,7 +5,7 @@ such as addition, scaling, normalization, and more.
 It is designed to be efficient and easy to use for game development purposes.
 """
 
-from math import sqrt, atan2, degrees
+from math import sqrt, atan2, degrees, cos, sin
 from point2d import Point2D
 
 MIN_FLOAT = 1e-300
@@ -99,6 +99,16 @@ class Vector2D(object):
     def angle_degrees(self):
         """Returns the angle of the vector in degrees."""
         return degrees(self.angle())
+    
+    def rotate(self, angle):
+        """Returns a rotated copy of the vector."""
+        c = cos(angle)
+        s = sin(angle)
+
+        return Vector2D(
+            self.x * c - self.y * s,
+            self.x * s + self.y * c
+        )
     
     def __neg__(self):
         return Vector2D(-self.x, -self.y)
