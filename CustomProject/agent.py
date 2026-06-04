@@ -4,22 +4,38 @@ This module defines the Agent class.
 """
 
 from turtle import shape
-
 import pyglet
 from vector2d import Vector2D, Point2D
 from graphics import COLOUR_NAMES, PolyLine, window, ArrowLine
+from pyglet.shapes import Line, Rectangle
 import math
 from math import dist, sin, cos, radians
-from random import random, randrange, uniform
+import random
 from path import Path
 from matrix33 import Matrix33
 from projectile import Projectile
+from behavior_tree import *
+from behavior_enemy_trees import BROWN_TREE, GREY_TREE, TEAL_TREE, YELLOW_TREE, RED_TREE, GREEN_TREE, PURPLE_TREE, WHITE_TREE, BLACK_TREE
+from geometry_utils import (
+    segment_hits_aabb,
+    ray_hits_aabb,
+    _ray_aabb_t,
+    distance,
+    distance_sq,
+)
+from enemy_profiles import ENEMY_PROFILES
 
 class Agent:
     """Base class for all tanks (no movement logic here)."""
 
     def __init__(self, world, spawn_pos, size = 30, color="LIGHT_BLUE"):
         self.world = world
+
+        self.velocity = Vector2D()
+
+        self.acceleration = 800.0      # fast build-up
+        self.max_speed = 120.0         # cap speed
+        self.deceleration = 1200.0     # fast stopping
 
         self.pos = Vector2D(spawn_pos[0], spawn_pos[1])
         self.color = color
@@ -67,6 +83,42 @@ class Agent:
 
         self.turret.anchor_x = 0
         self.turret.anchor_y = self.turret.height / 2
+
+    def apply_movement(self, accel, delta):
+        # acceleration
+        self.velocity += accel * delta
+
+        # speed cap
+        speed = self.velocity.length()
+
+        if speed > self.max_speed:
+            self.velocity = (
+                self.velocity.get_normalised()
+                * self.max_speed
+            )
+
+        # friction
+        if accel.length() < 0.01:
+            speed = self.velocity.length()
+
+            if speed > 0:
+                drop = self.deceleration * delta
+
+                if drop > speed:
+                    self.velocity.zero()
+                else:
+                    self.velocity = (
+                        self.velocity.get_normalised()
+                        * (speed - drop)
+                    )
+
+        # move
+        new_pos = self.pos + self.velocity * delta
+
+        if not self.world.check_wall_collision(self, new_pos):
+            self.pos = new_pos
+        else:
+            self.velocity.zero()
 
     def sync_graphics(self):
         self.vehicle.x = self.pos.x
@@ -139,6 +191,18 @@ class Agent:
 
         self.projectiles.append(projectile)
         self.world.projectiles.append(projectile)
+
+    def shoot_override_direction(self, direction):
+        if len(self.projectiles) >= self.max_projectiles:
+            return
+
+        spawn_pos = self.pos + direction * (self.size * 0.9)
+        vel = direction * 200
+
+        projectile = Projectile(spawn_pos, vel, owner=self)
+
+        self.projectiles.append(projectile)
+        self.world.projectiles.append(projectile)
     
     def turret_direction(self):
         angle_rad = math.radians(-self.turret.rotation)
@@ -150,18 +214,16 @@ class Agent:
 
         if hasattr(self, "front_marker"):
             self.front_marker.delete()
+    
+    def get_muzzle_position(self):
+        forward = self.turret_direction().get_normalised()
+        return self.pos + forward * (self.size * 0.9)
 
 class PlayerAgent(Agent):
     """Player-controlled tank (no physics, only input state)."""
 
     def __init__(self, world, spawn_pos, size = 30, color="LIGHT_BLUE"):
         super().__init__(world, spawn_pos, size, color)
-
-        self.velocity = Vector2D()
-
-        self.acceleration = 800.0      # fast build-up
-        self.max_speed = 120.0         # cap speed
-        self.deceleration = 1200.0     # fast stopping
 
         self.input_state = {
             "forward": False,
@@ -185,7 +247,6 @@ class PlayerAgent(Agent):
         if self.input_state["right"]:
             self.heading = self.heading.rotate(-self.turn_speed * delta)
 
-        # --- ACCELERATION INPUT ---
         accel = Vector2D()
 
         if self.input_state["forward"]:
@@ -194,34 +255,7 @@ class PlayerAgent(Agent):
         if self.input_state["backward"]:
             accel -= self.heading * self.acceleration
 
-        self.velocity += accel * delta
-
-        # --- SPEED LIMIT (vector-aware) ---
-        speed = self.velocity.length()
-
-        if speed > self.max_speed:
-            self.velocity = self.velocity.get_normalised() * self.max_speed
-
-        # --- FRICTION (always applied when no input or even slightly) ---
-        if self.input_state["forward"] is False and self.input_state["backward"] is False:
-            speed = self.velocity.length()
-
-            if speed > 0:
-                drop = self.deceleration * delta
-
-                if drop > speed:
-                    self.velocity.zero()
-                else:
-                    self.velocity = self.velocity.get_normalised() * (speed - drop)
-
-        # --- APPLY MOVEMENT ---
-        new_pos = self.pos + self.velocity * delta
-
-        if not self.world.check_wall_collision(self, new_pos):
-            self.pos = new_pos
-        else:
-            # simple response: stop movement on collision
-            self.velocity.zero()
+        self.apply_movement(accel, delta)
         
         # --- TURRET AIMING (PLAYER ONLY) ---
         mx = self.world.mouse_pos.x
@@ -250,75 +284,411 @@ class PlayerAgent(Agent):
                 self.shoot()
 
 class EnemyAgent(Agent):
-    """Enemy tank (AI handled by World later)."""
+    """Enemy tank controlled by behavior tree."""
 
-    def __init__(self, world, spawn_pos, size = 30, color="RED"):
+    def __init__(self, world, spawn_pos, size=30, color="RED", tree=None):
+
         super().__init__(world, spawn_pos, size, color)
 
-        self.target = None
+        self.tree = tree
+
+        self.path = []
+        self.path_timer = 0.0
+        
+        self.sway_angle = self.turret.rotation
+        self.sway_target = self.turret.rotation
+        self.sway_timer = 0.0
+        self.sway_interval = (1.5, 3.5)  # seconds between direction changes
+        self.turret.rotation += random.uniform(-180, 180)
+        self.sway_target = self.turret.rotation
+        self.sway_timer = random.uniform(0.0, 2.0)
+
+        # PROFILE LOOKUP (based on colour string)
+        profile = ENEMY_PROFILES.get(color.replace("ENEMY_", ""), {})
+
+        self.max_speed = profile.get("max_speed", 80.0)
+        self.max_projectiles = profile.get("max_projectiles", 2)
+        self.fire_rate = profile.get("fire_rate", 2.0)
+
+        # runtime state
+        self.fire_cooldown = 0.0
+
+        # Debugging
+        self.debug_lines = []
+
+
+    def update(self, delta):
+        if self.fire_cooldown > 0:
+            self.fire_cooldown -= delta
+
+        if self.tree:
+            self.tree.run(self, delta)
+
+
+
+        self.update_debug_ray()
+        self.render_path_debug()
+        self.sync_graphics()
     
-    def update(self, delta):
-        self.sync_graphics()
+    def get_buffer_aabb(self, scale=1.5):
+        """
+        Larger "no-fire zone" around agent.
+        Scale should be > 1 so it extends beyond body.
+        """
 
-class Brown(Agent):
-    def __init__(self, world, spawn_pos):
-        super().__init__(world, spawn_pos, color="ENEMY_BROWN")
+        half = self.size * scale / 2
+
+        return (
+            self.pos.x - half,
+            self.pos.y - half,
+            half * 2,
+            half * 2
+        )
     
-    def update(self, delta):
-        self.sync_graphics()
+    def can_shoot(self):
+        return (
+            self.fire_cooldown <= 0 and
+            len(self.projectiles) < self.max_projectiles
+        )
 
-class Grey(Agent):
-    def __init__(self, world, spawn_pos):
-        super().__init__(world, spawn_pos, color="ENEMY_GREY")
+    def shoot(self):
+        if not self.can_shoot():
+            return
 
-    def update(self, delta):
-        self.sync_graphics()
+        super().shoot()
+        self.fire_cooldown = self.fire_rate
 
-class Teal(EnemyAgent):
-    def __init__(self, world, spawn_pos):
-        super().__init__(world, spawn_pos, color="ENEMY_TEAL")  
+    def update_turret_sway(self, delta, speed=0.8):
+        import random
+        import math
 
-    def update(self, delta):
-        self.sync_graphics()
+        # countdown until we pick a new direction
+        self.sway_timer -= delta
 
-class Yellow(EnemyAgent):
-    def __init__(self, world, spawn_pos):
-        super().__init__(world, spawn_pos, color="ENEMY_YELLOW")
+        if self.sway_timer <= 0:
+            self.sway_timer = random.uniform(*self.sway_interval)
 
-    def update(self, delta):
-        self.sync_graphics()
+            # choose a new target angle (smooth wandering)
+            self.sway_target = self.turret.rotation + random.uniform(-90, 90)
 
-class Red(EnemyAgent):
-    def __init__(self, world, spawn_pos):
-        super().__init__(world, spawn_pos, color="ENEMY_RED")
+        # smooth interpolation toward target (no jitter)
+        diff = (self.sway_target - self.turret.rotation)
 
-    def update(self, delta):
-        self.sync_graphics()
+        # wrap to [-180, 180] for shortest path rotation
+        diff = (diff + 180) % 360 - 180
 
-class Green(EnemyAgent):
-    def __init__(self, world, spawn_pos):
-        super().__init__(world, spawn_pos, color="ENEMY_GREEN")
+        self.turret.rotation += diff * (1 - math.exp(-speed * delta))
 
-    def update(self, delta):
-        self.sync_graphics()
+    def simulate_bullet_path(self, origin, direction, max_bounces=1, max_distance=2000.0):
+        """
+        Proper ray-bounce simulation using ray-AABB intersection (no stepping).
+        Returns list of (start, end) segments.
+        """
 
-class Purple(EnemyAgent):
-    def __init__(self, world, spawn_pos):
-        super().__init__(world, spawn_pos, color="ENEMY_PURPLE")
+        from geometry_utils import _ray_aabb_t  # or wherever you placed it
 
-    def update(self, delta):
-        self.sync_graphics()
+        dir = direction.get_normalised()
 
-class White(EnemyAgent):    
-    def __init__(self, world, spawn_pos):
-        super().__init__(world, spawn_pos, color="ENEMY_WHITE")
+        pos = origin.copy()
+        remaining = max_bounces
+        travelled = 0.0
 
-    def update(self, delta):
-        self.sync_graphics()
+        segments = []
 
-class Black(EnemyAgent):
-    def __init__(self, world, spawn_pos):
-        super().__init__(world, spawn_pos, color="ENEMY_BLACK")
+        while travelled < max_distance:
 
-    def update(self, delta):
-        self.sync_graphics()
+            closest_t = float("inf")
+            closest_hit = None
+            hit_side = None
+
+            # find closest wall hit
+            for wall in self.world.wall_rects:
+                bx, by = wall.x, wall.y
+                bw, bh = wall.width, wall.height
+
+                hit, t = _ray_aabb_t(pos, dir, bx, by, bw, bh)
+
+                if hit and 0 < t < closest_t:
+                    closest_t = t
+                    closest_hit = pos + dir * t
+
+                    # determine bounce axis
+                    eps = 1e-5
+                    if abs(closest_hit.x - bx) < eps:
+                        hit_side = "LEFT"
+                    elif abs(closest_hit.x - (bx + bw)) < eps:
+                        hit_side = "RIGHT"
+                    elif abs(closest_hit.y - by) < eps:
+                        hit_side = "BOTTOM"
+                    else:
+                        hit_side = "TOP"
+
+            # no hit → extend to max distance
+            if closest_hit is None:
+                end = pos + dir * (max_distance - travelled)
+                segments.append((pos.copy(), end.copy()))
+                break
+
+            segments.append((pos.copy(), closest_hit.copy()))
+
+            travelled += closest_t
+            if travelled >= max_distance:
+                break
+
+            if remaining <= 0:
+                break
+
+            remaining -= 1
+
+            # bounce
+            if hit_side in ("LEFT", "RIGHT"):
+                dir.x *= -1
+            else:
+                dir.y *= -1
+
+            pos = closest_hit
+
+        return segments
+
+    def is_shot_safe(self, direction):
+
+        direction = direction.get_normalised()
+        origin = self.get_muzzle_position()
+
+        path = self.simulate_bullet_path(origin, direction, max_bounces=1)
+
+        for start, end in path:
+
+            seg_dir = end - start
+            seg_len = seg_dir.length()
+
+            if seg_len < 1:
+                continue
+
+            seg_dir = seg_dir.get_normalised()
+
+            for agent in self.world.agents:
+                if agent is self.world.player:
+                    continue
+
+                # ALWAYS include self check via buffer
+                ax, ay, aw, ah = agent.get_buffer_aabb(scale=1.5)
+
+                hit, t = _ray_aabb_t(start, seg_dir, ax, ay, aw, ah)
+
+                # Any intersection is unsafe
+                if hit and 0 <= t <= seg_len:
+                    return False
+
+        return True
+
+    # aiming heuristic
+    def shot_risk(self):
+        fire_dir = self.turret_direction().get_normalised()
+
+        danger = 0.0
+
+        for agent in self.world.agents:
+
+            if agent is self:
+                continue
+
+            to_agent = agent.pos - self.pos
+            dist = to_agent.length()
+
+            if dist < 1:
+                continue
+
+            to_agent = to_agent.get_normalised()
+
+            alignment = fire_dir.dot(to_agent)
+
+            if alignment > 0.97:
+                danger += 1.0 / max(dist, 1.0)
+
+        return danger
+
+    def separation_force(self, desired_dist=80.0):
+        force = Vector2D()
+
+        for other in self.world.agents:
+
+            if other is self:
+                continue
+
+            if other is self.world.player:
+                continue
+
+            offset = self.pos - other.pos
+            dist = offset.length()
+
+            if dist < 0.001:
+                continue
+
+            if dist < desired_dist:
+
+                strength = 1.0 - (dist / desired_dist)
+
+                force += (
+                    offset.get_normalised()
+                    * strength
+                )
+
+        return force
+    
+    def wall_avoidance_force(self, desired_dist=50.0):
+        force = Vector2D()
+
+        for wall in self.world.wall_rects:
+
+            # closest point on wall AABB
+            closest_x = max(wall.x, min(self.pos.x, wall.x + wall.width))
+            closest_y = max(wall.y, min(self.pos.y, wall.y + wall.height))
+
+            offset = self.pos - Vector2D(closest_x, closest_y)
+
+            radius = self.size * 0.5
+
+            dist = offset.length() - radius
+
+            if dist < 1:
+                continue
+
+            if dist < desired_dist:
+                strength = (desired_dist - dist) / desired_dist
+                force += offset.get_normalised() * strength
+
+        return force
+
+    def follow_path(self, path, delta, speed=1.0):
+
+        if not path or len(path) == 0:
+            return False
+
+        lookahead_index = min(2, len(path) - 1)
+        target = path[lookahead_index]
+
+        to_target = target - self.pos
+
+        if to_target.length() < 5:
+            return True
+
+        path_dir = to_target.get_normalised()
+
+        # ----------------------------
+        # Separation steering
+        # ----------------------------
+
+        sep_force = self.separation_force()
+        wall_force = self.wall_avoidance_force(desired_dist=40)
+
+        desired_heading = (
+            path_dir +
+            wall_force * 1.5 +
+            sep_force * 2.0
+        ).get_normalised()
+
+        if desired_heading.length() > 0:
+            desired_heading = desired_heading.get_normalised()
+        else:
+            desired_heading = self.heading
+
+        # ----------------------------
+        # Existing heading steering
+        # ----------------------------
+
+        self.heading = (
+            self.heading +
+            (desired_heading - self.heading) * 0.15
+        ).get_normalised()
+
+        accel = self.heading * self.acceleration
+
+        self.apply_movement(accel, delta)
+
+        return True
+    
+    
+    def update_debug_buffers(self):
+
+        # clear old buffer visuals
+        if not hasattr(self, "debug_buffers"):
+            self.debug_buffers = []
+
+        for rect in self.debug_buffers:
+            rect.delete()
+        self.debug_buffers.clear()
+
+        for agent in self.world.agents:
+            if agent is self.world.player:
+                continue
+
+            ax, ay, aw, ah = agent.get_buffer_aabb()
+
+            rect = Rectangle(
+                ax,
+                ay,
+                aw,
+                ah,
+                color=(200, 80, 80),  # red = AI danger zone
+                batch=window.get_batch("info")
+            )
+
+            rect.opacity = 40  # make it translucent
+            rect.anchor_x = 0
+            rect.anchor_y = 0
+
+            self.debug_buffers.append(rect)
+
+    def update_debug_ray(self):
+
+        for line in self.debug_lines:
+            line.delete()
+        self.debug_lines.clear()
+
+        direction = self.turret_direction().get_normalised()
+        origin = self.get_muzzle_position()
+
+        path = self.simulate_bullet_path(origin, direction, max_bounces=1)
+
+        unsafe = not self.is_shot_safe(direction)
+
+        colour = (255, 60, 60, 255) if unsafe else (80, 220, 120, 255)
+
+        for start, end in path:
+            line = Line(
+                start.x, start.y,
+                end.x, end.y,
+                color=colour,
+                batch=window.get_batch("info")
+            )
+            line.width = 2
+            self.debug_lines.append(line)
+
+    def render_path_debug(self):
+        if not hasattr(self, "debug_path_lines"):
+            self.debug_path_lines = []
+        
+
+        # clear old
+        for line in self.debug_path_lines:
+            line.delete()
+        self.debug_path_lines.clear()
+
+        path = getattr(self, "path", None)
+        if not path or len(path) < 2:
+            return
+
+        for i in range(len(path) - 1):
+            a = path[i]
+            b = path[i + 1]
+
+            line = Line(
+                a.x, a.y,
+                b.x, b.y,
+                color=(80, 160, 255, 255),  # blue = navigation path
+                batch=window.get_batch("info")
+            )
+            line.width = 2
+
+            self.debug_path_lines.append(line)
