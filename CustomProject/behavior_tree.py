@@ -82,12 +82,13 @@ class AimAt(Node):
         if not target:
             return False
 
-        to_target = (target.pos - agent.pos).get_normalised()
+        to_target = target.pos - agent.pos
 
-        angle = math.atan2(to_target.y, to_target.x)
+        angle = math.degrees(math.atan2(to_target.y, to_target.x))
         angle += random.uniform(-self.noise, self.noise)
 
-        desired = math.degrees(angle)
+        # IMPORTANT: match turret_direction convention
+        desired = -angle
 
         agent.turret.rotation += (desired - agent.turret.rotation) * self.smooth
         return True

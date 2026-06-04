@@ -15,13 +15,27 @@ from path import Path
 from matrix33 import Matrix33
 from projectile import Projectile
 from behavior_tree import *
-from behavior_enemy_trees import BROWN_TREE, GREY_TREE, TEAL_TREE, YELLOW_TREE, RED_TREE, GREEN_TREE, PURPLE_TREE, WHITE_TREE, BLACK_TREE
-from geometry_utils import (
-    segment_hits_aabb,
-    ray_hits_aabb,
-    _ray_aabb_t,
-    distance,
-    distance_sq,
+from behavior_enemy_trees import (BROWN_COMBAT_TREE, 
+                                  GREY_COMBAT_TREE, 
+                                  GREY_MOVEMENT_TREE, 
+                                  TEAL_COMBAT_TREE, 
+                                  TEAL_MOVEMENT_TREE, 
+                                  YELLOW_COMBAT_TREE, 
+                                  YELLOW_MOVEMENT_TREE, 
+                                  RED_COMBAT_TREE, 
+                                  RED_MOVEMENT_TREE,
+                                  GREEN_COMBAT_TREE,
+                                  PURPLE_COMBAT_TREE,
+                                  PURPLE_MOVEMENT_TREE,
+                                  WHITE_COMBAT_TREE,
+                                  WHITE_MOVEMENT_TREE,
+                                  BLACK_COMBAT_TREE,
+                                  BLACK_MOVEMENT_TREE)
+from geometry_utils import (segment_hits_aabb,
+                            ray_hits_aabb,
+                            _ray_aabb_t,
+                            distance,
+                            distance_sq,
 )
 from enemy_profiles import ENEMY_PROFILES
 
@@ -115,7 +129,7 @@ class Agent:
         # move
         new_pos = self.pos + self.velocity * delta
 
-        if not self.world.check_wall_collision(self, new_pos):
+        if not self.world.check_wall_collision(self, new_pos) and not self.world.check_hole_collision(self,new_pos):
             self.pos = new_pos
         else:
             self.velocity.zero()
@@ -286,11 +300,12 @@ class PlayerAgent(Agent):
 class EnemyAgent(Agent):
     """Enemy tank controlled by behavior tree."""
 
-    def __init__(self, world, spawn_pos, size=30, color="RED", tree=None):
+    def __init__(self, world, spawn_pos, size=30, color="RED", movement_tree=None, combat_tree=None):
 
         super().__init__(world, spawn_pos, size, color)
 
-        self.tree = tree
+        self.movement_tree = movement_tree
+        self.combat_tree = combat_tree
 
         self.path = []
         self.path_timer = 0.0
@@ -321,16 +336,17 @@ class EnemyAgent(Agent):
         if self.fire_cooldown > 0:
             self.fire_cooldown -= delta
 
-        if self.tree:
-            self.tree.run(self, delta)
+        if self.movement_tree:
+            self.movement_tree.run(self, delta)
 
-
+        if self.combat_tree:
+            self.combat_tree.run(self, delta)
 
         self.update_debug_ray()
         self.render_path_debug()
         self.sync_graphics()
     
-    def get_buffer_aabb(self, scale=1.5):
+    def get_buffer_aabb(self, scale=2.5):
         """
         Larger "no-fire zone" around agent.
         Scale should be > 1 so it extends beyond body.
@@ -472,7 +488,7 @@ class EnemyAgent(Agent):
                     continue
 
                 # ALWAYS include self check via buffer
-                ax, ay, aw, ah = agent.get_buffer_aabb(scale=1.5)
+                ax, ay, aw, ah = agent.get_buffer_aabb()
 
                 hit, t = _ray_aabb_t(start, seg_dir, ax, ay, aw, ah)
 
@@ -560,6 +576,41 @@ class EnemyAgent(Agent):
 
         return force
 
+    def hole_avoidance_force(self, desired_dist=60.0):
+        force = Vector2D()
+
+        for hole in self.world.hole_circles:
+
+            hole_pos = Vector2D(
+                hole.x,
+                hole.y
+            )
+
+            offset = self.pos - hole_pos
+
+            # account for tank radius and hole radius
+            dist = (
+                offset.length()
+                - hole.radius
+                - self.size * 0.5
+            )
+
+            if dist < 1:
+                continue
+
+            if dist < desired_dist:
+
+                strength = (
+                    desired_dist - dist
+                ) / desired_dist
+
+                force += (
+                    offset.get_normalised()
+                    * strength
+                )
+
+        return force
+
     def follow_path(self, path, delta, speed=1.0):
 
         if not path or len(path) == 0:
@@ -581,10 +632,12 @@ class EnemyAgent(Agent):
 
         sep_force = self.separation_force()
         wall_force = self.wall_avoidance_force(desired_dist=40)
+        hole_force = self.hole_avoidance_force(desired_dist=40)
 
         desired_heading = (
             path_dir +
             wall_force * 1.5 +
+            hole_force * 1.5 +
             sep_force * 2.0
         ).get_normalised()
 

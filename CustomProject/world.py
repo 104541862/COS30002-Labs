@@ -15,19 +15,34 @@ from projectile import Projectile
 from time import time
 from map_loader import MapLoader
 import math
-from behavior_enemy_trees import BROWN_TREE, GREY_TREE, TEAL_TREE, YELLOW_TREE, RED_TREE, GREEN_TREE, PURPLE_TREE, WHITE_TREE, BLACK_TREE
+from behavior_enemy_trees import (BROWN_COMBAT_TREE, 
+                                  GREY_COMBAT_TREE, 
+                                  GREY_MOVEMENT_TREE, 
+                                  TEAL_COMBAT_TREE, 
+                                  TEAL_MOVEMENT_TREE, 
+                                  YELLOW_COMBAT_TREE, 
+                                  YELLOW_MOVEMENT_TREE, 
+                                  RED_COMBAT_TREE, 
+                                  RED_MOVEMENT_TREE,
+                                  GREEN_COMBAT_TREE,
+                                  PURPLE_COMBAT_TREE,
+                                  PURPLE_MOVEMENT_TREE,
+                                  WHITE_COMBAT_TREE,
+                                  WHITE_MOVEMENT_TREE,
+                                  BLACK_COMBAT_TREE,
+                                  BLACK_MOVEMENT_TREE)
 from pathfinding import Grid, astar
 
 ENEMY_TYPES = {
-    "B": ("ENEMY_BROWN", BROWN_TREE),
-    "G": ("ENEMY_GREY", GREY_TREE),
-    "T": ("ENEMY_TEAL", TEAL_TREE),
-    "Y": ("ENEMY_YELLOW", YELLOW_TREE),
-    "R": ("ENEMY_RED", RED_TREE),
-    "N": ("ENEMY_GREEN", GREEN_TREE),
-    "P": ("ENEMY_PURPLE", PURPLE_TREE),
-    "W": ("ENEMY_WHITE", WHITE_TREE),
-    "K": ("ENEMY_BLACK", BLACK_TREE),
+    "B": ("ENEMY_BROWN", None, BROWN_COMBAT_TREE),
+    "G": ("ENEMY_GREY", GREY_MOVEMENT_TREE, GREY_COMBAT_TREE),
+    "T": ("ENEMY_TEAL", TEAL_MOVEMENT_TREE, TEAL_COMBAT_TREE),
+    "Y": ("ENEMY_YELLOW", YELLOW_MOVEMENT_TREE, YELLOW_COMBAT_TREE),
+    "R": ("ENEMY_RED", RED_MOVEMENT_TREE, RED_COMBAT_TREE),
+    "N": ("ENEMY_GREEN", None, GREEN_COMBAT_TREE),
+    "P": ("ENEMY_PURPLE", PURPLE_MOVEMENT_TREE, PURPLE_COMBAT_TREE),
+    "W": ("ENEMY_WHITE", WHITE_MOVEMENT_TREE, WHITE_COMBAT_TREE),
+    "K": ("ENEMY_BLACK", BLACK_MOVEMENT_TREE, BLACK_COMBAT_TREE),
 }
 
 class World(object):
@@ -82,13 +97,14 @@ class World(object):
             if config is None:
                 continue
 
-            color, tree = config
+            color, movement_tree, combat_tree = config
 
             enemy = EnemyAgent(
                 world=self,
                 spawn_pos=pos,
                 color=color,
-                tree=tree
+                movement_tree=movement_tree,
+                combat_tree=combat_tree,
             )
 
             self.agents.append(enemy)
@@ -131,12 +147,15 @@ class World(object):
 
         # --- PROJECTILES ---
         alive_projectiles = []
+        to_remove = set()
 
+        # -------- PASS 1: UPDATE + COLLISION DETECTION --------
         for projectile in self.projectiles:
             projectile.update(delta)
-            
+
+            # --- AGENT HIT CHECK ---
             hit_agent = None
-            
+
             for agent in self.agents:
                 if self.projectile_hits_agent(projectile, agent):
                     hit_agent = agent
@@ -149,49 +168,73 @@ class World(object):
                     self.agents.remove(hit_agent)
 
                 projectile.shape.delete()
+
                 if projectile.owner and projectile in projectile.owner.projectiles:
                     projectile.owner.projectiles.remove(projectile)
+
+                to_remove.add(projectile)
                 continue
 
+            # --- WALL COLLISION ---
             hit = self.projectile_wall_collision(projectile)
 
             if hit is not None:
-                # --- APPLY BOUNCE ---
+
                 if hit in ("LEFT", "RIGHT"):
                     projectile.vel.x *= -1
 
-                    # push OUT of wall on X axis
                     if hit == "LEFT":
-                        projectile.pos.x = projectile.pos.x - 2
-                    else:  # RIGHT
-                        projectile.pos.x = projectile.pos.x + 2
+                        projectile.pos.x -= 2
+                    else:
+                        projectile.pos.x += 2
 
                 elif hit in ("TOP", "BOTTOM"):
                     projectile.vel.y *= -1
 
-                    # push OUT of wall on Y axis
                     if hit == "BOTTOM":
-                        projectile.pos.y = projectile.pos.y - 2
-                    else:  # TOP
-                        projectile.pos.y = projectile.pos.y + 2
+                        projectile.pos.y -= 2
+                    else:
+                        projectile.pos.y += 2
 
                 projectile.bounce_count += 1
 
-            # --- REMOVE IF DEAD ---
-            if projectile.bounce_count > projectile.max_bounces:
+            # --- PROJECTILE vs PROJECTILE COLLISION (PAIRWISE SAFE PASS) ---
+            for other in self.projectiles:
+                if other is projectile:
+                    continue
+
+                if other in to_remove:
+                    continue
+
+                dx = projectile.pos.x - other.pos.x
+                dy = projectile.pos.y - other.pos.y
+
+                # collision radius (tune if needed)
+                r = 8
+                if (dx * dx + dy * dy) <= (r * r * 4):
+                    to_remove.add(projectile)
+                    to_remove.add(other)
+                    break
+
+            # --- DEFERRED REMOVAL CHECK ---
+            if (
+                projectile.bounce_count > projectile.max_bounces
+                or projectile in to_remove
+            ):
                 projectile.shape.delete()
+
                 if projectile.owner and projectile in projectile.owner.projectiles:
                     projectile.owner.projectiles.remove(projectile)
             else:
                 alive_projectiles.append(projectile)
 
+        # -------- PASS 2: COMMIT LIST --------
         self.projectiles = alive_projectiles
 
+        # --- DEBUG / POST UPDATE ---
         for agent in self.agents:
             if isinstance(agent, EnemyAgent):
                 agent.update_debug_buffers()
-
-        self.grid.update_costs_for_grey(self.player.pos)
 
     def world_to_grid(self, pos):
         return int(pos.x // self.cell_size), int(pos.y // self.cell_size)
@@ -209,18 +252,28 @@ class World(object):
                 wall.y <= y <= wall.y + wall.height):
                 return True
         return False
+    
+    def point_in_hole(self, x, y):
+        for hole in self.hole_circles:
+            dx = x - hole.x
+            dy = y - hole.y
+
+            if (dx * dx + dy * dy) <= (hole.radius * hole.radius):
+                return True
+
+        return False
 
     def create_enemy(enemy_type, world, pos):
         mapping = {
-            "B": ("ENEMY_BROWN", BROWN_TREE),
-            "G": ("ENEMY_GREY", GREY_TREE),
-            #"T": ("ENEMY_TEAL", TEAL_TREE),
-            #"Y": ("ENEMY_YELLOW", YELLOW_TREE),
-            #"R": ("ENEMY_RED", RED_TREE),
-            #"N": ("ENEMY_GREEN", GREEN_TREE),
-            #"P": ("ENEMY_PURPLE", PURPLE_TREE),
-            #"W": ("ENEMY_WHITE", WHITE_TREE),
-            #"K": ("ENEMY_BLACK", BLACK_TREE),
+            "B": ("ENEMY_BROWN", None, BROWN_COMBAT_TREE),
+            "G": ("ENEMY_GREY", GREY_MOVEMENT_TREE, GREY_COMBAT_TREE),
+            "T": ("ENEMY_TEAL", TEAL_MOVEMENT_TREE, TEAL_COMBAT_TREE),
+            "Y": ("ENEMY_YELLOW", YELLOW_MOVEMENT_TREE, YELLOW_COMBAT_TREE),
+            "R": ("ENEMY_RED", RED_MOVEMENT_TREE, RED_COMBAT_TREE),
+            "N": ("ENEMY_GREEN", None, GREEN_COMBAT_TREE),
+            "P": ("ENEMY_PURPLE", PURPLE_MOVEMENT_TREE, PURPLE_COMBAT_TREE),
+            "W": ("ENEMY_WHITE", WHITE_MOVEMENT_TREE, WHITE_COMBAT_TREE),
+            "K": ("ENEMY_BLACK", BLACK_MOVEMENT_TREE, BLACK_COMBAT_TREE),
         }
 
         color, tree = mapping[enemy_type]
@@ -312,9 +365,45 @@ class World(object):
 
         return False
     
+    def check_hole_collision(self, agent, new_pos):
+        half = agent.size / 2
+
+        ax = new_pos.x - half
+        ay = new_pos.y - half
+        aw = agent.size
+        ah = agent.size
+
+        for hole in self.hole_circles:
+            # circle center
+            cx = hole.x
+            cy = hole.y
+            r = hole.radius
+
+            # find closest point on agent AABB to circle center
+            closest_x = max(ax, min(cx, ax + aw))
+            closest_y = max(ay, min(cy, ay + ah))
+
+            dx = cx - closest_x
+            dy = cy - closest_y
+
+            if (dx * dx + dy * dy) <= r * r:
+                return True
+
+        return False
+    
+    def check_projectile_collision(self, p1, p2):
+        # simple circular collision (fast + good enough for bullets)
+        dx = p1.pos.x - p2.pos.x
+        dy = p1.pos.y - p2.pos.y
+
+        # assume projectile radius ~3–5 pixels (adjust if needed)
+        r = 4
+
+        return (dx * dx + dy * dy) <= (r * r * 4)
+    
     def has_clear_line(self, start, end):
         direction = (end - start).get_normalised()
-        step = direction * 5
+        step = direction * 2
 
         test = start.copy()
         dist_total = (end - start).length()
@@ -322,7 +411,7 @@ class World(object):
 
         while travelled < dist_total:
             test += step
-            travelled += 5
+            travelled += 2
 
             for wall in self.wall_rects:
                 if (wall.x <= test.x <= wall.x + wall.width and

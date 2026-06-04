@@ -30,57 +30,12 @@ class Grid:
     def _build_grid(self):
         for x in range(self.width):
             for y in range(self.height):
-                world_x = x * self.cell_size
-                world_y = y * self.cell_size
+                world_x = x * self.cell_size + self.cell_size / 2
+                world_y = y * self.cell_size + self.cell_size / 2
 
-                walkable = not self.world.point_in_wall(world_x, world_y)
+                walkable = not self.world.point_in_wall(world_x, world_y) and not self.world.point_in_hole(world_x, world_y)
 
                 self.nodes[(x, y)] = GridNode(x, y, walkable)
-
-    def tactical_cost(self, node, player_pos):
-        world = self.world_from_node((node.x, node.y))
-
-        to_player = (world - player_pos)
-        dist = to_player.length()
-
-        # preferred band (grey tank behaviour)
-        ideal = 800.0
-        distance_score = abs(dist - ideal)
-
-        # wall proximity bonus (encourage cover)
-        cover_bonus = 0.0
-        for wall in self.world.wall_rects:
-            wx, wy = wall.x, wall.y
-            if abs(world.x - wx) < 80 or abs(world.y - wy) < 80:
-                cover_bonus -= 10.0
-
-        return distance_score + cover_bonus
-    
-    def best_tactical_node(self, player_pos):
-        best = None
-        best_score = float("inf")
-
-        for node in self.nodes.values():
-            if not node.walkable:
-                continue
-
-            score = self.tactical_cost(node, player_pos)
-
-            if score < best_score:
-                best_score = score
-                best = (node.x, node.y)
-
-        return best
-
-    def update_costs_for_grey(self, player_pos):
-        for node in self.nodes.values():
-            world = self.world.grid.world_from_node((node.x, node.y))
-            dist = (world - player_pos).length()
-
-            # Grey tanks prefer medium distance (not too close, not too far)
-            ideal = 800.0
-
-            node.cost = abs(dist - ideal) / 100.0 + 1.0
 
     def node_from_world(self, pos):
         return (int(pos.x // self.cell_size), int(pos.y // self.cell_size))
