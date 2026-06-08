@@ -26,11 +26,16 @@ class Projectile:
 
         self.shape = self._create_shape(color, radius)
 
-    def update(self, delta):
-        self.pos += self.vel * delta
+        self.alive = True
 
-        self.shape.x = self.pos.x
-        self.shape.y = self.pos.y
+    def update(self, delta):
+        if self.alive:
+            self.pos += self.vel * delta
+
+            self.shape.x = self.pos.x
+            self.shape.y = self.pos.y
+        else:
+            return
 
     def _create_shape(self, color, radius):
         return pyglet.shapes.Circle(
@@ -39,3 +44,9 @@ class Projectile:
             color=color,
             batch=window.get_batch("main")
         )
+    
+    def destroy(self):
+        if self.shape:
+            self.shape.delete()
+            self.shape = None
+        self.alive = False

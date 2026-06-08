@@ -95,8 +95,24 @@ class AimAt(Node):
 
 class Shoot(Node):
     def run(self, agent, delta):
-        direction = agent.turret_direction()
+        direction = getattr(agent, "_green_shot_dir", None)
+
+        if direction is None:
+            direction = agent.turret_direction()
+
         agent.shoot_override_direction(direction)
+        return True
+
+class CanPlaceMine(Node):
+    def run(self, agent, delta):
+        return (
+            hasattr(agent, "active_mine") and
+            agent.active_mine is None
+        )
+
+class PlaceMine(Node):
+    def run(self, agent, delta):
+        agent.place_mine()
         return True
 
 class KeepDistance:

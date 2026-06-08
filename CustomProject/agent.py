@@ -14,6 +14,7 @@ import random
 from path import Path
 from matrix33 import Matrix33
 from projectile import Projectile
+from mine import Mine
 from behavior_tree import *
 from behavior_enemy_trees import (BROWN_COMBAT_TREE, 
                                   GREY_COMBAT_TREE, 
@@ -97,6 +98,8 @@ class Agent:
 
         self.turret.anchor_x = 0
         self.turret.anchor_y = self.turret.height / 2
+
+        self.active_mine = None
 
     def apply_movement(self, accel, delta):
         # acceleration
@@ -194,7 +197,7 @@ class Agent:
 
         spawn_pos = self.pos + forward * (self.size * 0.9)
 
-        speed = 200.0
+        speed = getattr(self, "bullet_speed", 200.0)
         vel = forward * speed
 
         projectile = Projectile(
@@ -211,13 +214,27 @@ class Agent:
             return
 
         spawn_pos = self.pos + direction * (self.size * 0.9)
-        vel = direction * 200
+        vel = direction * getattr(self, "bullet_speed", 200.0)
 
         projectile = Projectile(spawn_pos, vel, owner=self)
 
         self.projectiles.append(projectile)
         self.world.projectiles.append(projectile)
-    
+
+    def place_mine(self):
+        if not self.active_mine:
+            mine = Mine(
+                pos=self.pos,
+                owner=self,
+                fuse=10.0,
+                radius=70
+            )
+
+            self.active_mine = mine
+            self.world.mines.append(mine)
+        else:
+            return
+
     def turret_direction(self):
         angle_rad = math.radians(-self.turret.rotation)
         return Vector2D(math.cos(angle_rad), math.sin(angle_rad))
@@ -244,6 +261,7 @@ class PlayerAgent(Agent):
             "left": False,
             "right": False,
             "backward": False,
+            "mine": False,
             "shoot": False,
         }
 
@@ -292,6 +310,10 @@ class PlayerAgent(Agent):
             self.input_state["left"] = value
         elif key == "D":
             self.input_state["right"] = value
+        elif key == "E":
+            self.input_state["mine"] = value
+            if value:
+                self.place_mine()
         elif key == " ":
             self.input_state["shoot"] = value
             if value:  # only shoot on key press, not release
@@ -299,17 +321,12 @@ class PlayerAgent(Agent):
 
 class EnemyAgent(Agent):
     """Enemy tank controlled by behavior tree."""
-
     def __init__(self, world, spawn_pos, size=30, color="RED", movement_tree=None, combat_tree=None):
-
         super().__init__(world, spawn_pos, size, color)
-
         self.movement_tree = movement_tree
         self.combat_tree = combat_tree
-
         self.path = []
         self.path_timer = 0.0
-        
         self.sway_angle = self.turret.rotation
         self.sway_target = self.turret.rotation
         self.sway_timer = 0.0
@@ -317,20 +334,16 @@ class EnemyAgent(Agent):
         self.turret.rotation += random.uniform(-180, 180)
         self.sway_target = self.turret.rotation
         self.sway_timer = random.uniform(0.0, 2.0)
-
         # PROFILE LOOKUP (based on colour string)
         profile = ENEMY_PROFILES.get(color.replace("ENEMY_", ""), {})
-
         self.max_speed = profile.get("max_speed", 80.0)
         self.max_projectiles = profile.get("max_projectiles", 2)
         self.fire_rate = profile.get("fire_rate", 2.0)
-
+        self.bullet_speed = profile.get("bullet_speed", 200.0)
         # runtime state
         self.fire_cooldown = 0.0
-
         # Debugging
         self.debug_lines = []
-
 
     def update(self, delta):
         if self.fire_cooldown > 0:
@@ -351,9 +364,7 @@ class EnemyAgent(Agent):
         Larger "no-fire zone" around agent.
         Scale should be > 1 so it extends beyond body.
         """
-
         half = self.size * scale / 2
-
         return (
             self.pos.x - half,
             self.pos.y - half,
@@ -370,14 +381,12 @@ class EnemyAgent(Agent):
     def shoot(self):
         if not self.can_shoot():
             return
-
         super().shoot()
         self.fire_cooldown = self.fire_rate
 
     def update_turret_sway(self, delta, speed=0.8):
         import random
         import math
-
         # countdown until we pick a new direction
         self.sway_timer -= delta
 
@@ -466,6 +475,47 @@ class EnemyAgent(Agent):
 
         return segments
 
+    def find_bounce_shot(self, samples=60, max_bounces=1):
+        from math import cos, sin, radians
+        import random
+
+        origin = self.get_muzzle_position()
+        player = self.world.player
+
+        best_dir = None
+        best_score = 0.0
+
+        for i in range(samples):
+            angle = random.uniform(0, 360)
+            direction = Vector2D(cos(radians(angle)), sin(radians(angle)))
+
+            path = self.simulate_bullet_path(origin, direction, max_bounces=max_bounces)
+
+            hit_player = False
+            score = 0.0
+
+            for start, end in path:
+                seg = end - start
+                seg_len = seg.length()
+                if seg_len < 1:
+                    continue
+
+                seg_dir = seg.get_normalised()
+
+                ax, ay, aw, ah = player.get_aabb()
+                hit, t = _ray_aabb_t(start, seg_dir, ax, ay, aw, ah)
+
+                if hit and 0 <= t <= seg_len:
+                    hit_player = True
+                    score = 1.0 / max(1.0, (start - player.pos).length())
+                    break
+
+            if hit_player and score > best_score:
+                best_score = score
+                best_dir = direction
+
+        return best_dir
+
     def is_shot_safe(self, direction):
 
         direction = direction.get_normalised()
@@ -480,94 +530,107 @@ class EnemyAgent(Agent):
 
             if seg_len < 1:
                 continue
-
             seg_dir = seg_dir.get_normalised()
-
             for agent in self.world.agents:
                 if agent is self.world.player:
                     continue
-
                 # ALWAYS include self check via buffer
                 ax, ay, aw, ah = agent.get_buffer_aabb()
-
                 hit, t = _ray_aabb_t(start, seg_dir, ax, ay, aw, ah)
-
                 # Any intersection is unsafe
                 if hit and 0 <= t <= seg_len:
                     return False
-
         return True
-
+    
     # aiming heuristic
     def shot_risk(self):
         fire_dir = self.turret_direction().get_normalised()
-
         danger = 0.0
-
         for agent in self.world.agents:
-
             if agent is self:
                 continue
-
             to_agent = agent.pos - self.pos
             dist = to_agent.length()
-
             if dist < 1:
                 continue
-
             to_agent = to_agent.get_normalised()
-
             alignment = fire_dir.dot(to_agent)
-
             if alignment > 0.97:
                 danger += 1.0 / max(dist, 1.0)
-
         return danger
-
     def separation_force(self, desired_dist=80.0):
         force = Vector2D()
-
         for other in self.world.agents:
-
             if other is self:
                 continue
-
             if other is self.world.player:
                 continue
-
             offset = self.pos - other.pos
             dist = offset.length()
-
             if dist < 0.001:
                 continue
-
             if dist < desired_dist:
-
                 strength = 1.0 - (dist / desired_dist)
-
                 force += (
                     offset.get_normalised()
                     * strength
                 )
-
         return force
     
     def wall_avoidance_force(self, desired_dist=50.0):
         force = Vector2D()
-
         for wall in self.world.wall_rects:
-
             # closest point on wall AABB
             closest_x = max(wall.x, min(self.pos.x, wall.x + wall.width))
             closest_y = max(wall.y, min(self.pos.y, wall.y + wall.height))
-
             offset = self.pos - Vector2D(closest_x, closest_y)
-
             radius = self.size * 0.5
-
             dist = offset.length() - radius
-
             if dist < 1:
+                continue
+            if dist < desired_dist:
+                strength = (desired_dist - dist) / desired_dist
+                force += offset.get_normalised() * strength
+        return force
+
+    def hole_avoidance_force(self, desired_dist=60.0):
+        force = Vector2D()
+        for hole in self.world.hole_circles:
+            hole_pos = Vector2D(
+                hole.x,
+                hole.y
+            )
+            offset = self.pos - hole_pos
+            # account for tank radius and hole radius
+            dist = (
+                offset.length()
+                - hole.radius
+                - self.size * 0.5
+            )
+            if dist < 1:
+                continue
+            if dist < desired_dist:
+                strength = (
+                    desired_dist - dist
+                ) / desired_dist
+                force += (
+                    offset.get_normalised()
+                    * strength
+                )
+        return force
+    
+    def mine_avoidance_force(self, desired_dist=160.0):
+        force = Vector2D()
+
+        for mine in self.world.mines:
+            # ignore unarmed or already exploded mines
+            if not mine.armed or getattr(mine, "exploded", False):
+                continue
+
+            offset = self.pos - mine.pos
+            dist = offset.length()
+
+            if dist < 0.001:
                 continue
 
             if dist < desired_dist:
@@ -576,108 +639,51 @@ class EnemyAgent(Agent):
 
         return force
 
-    def hole_avoidance_force(self, desired_dist=60.0):
-        force = Vector2D()
-
-        for hole in self.world.hole_circles:
-
-            hole_pos = Vector2D(
-                hole.x,
-                hole.y
-            )
-
-            offset = self.pos - hole_pos
-
-            # account for tank radius and hole radius
-            dist = (
-                offset.length()
-                - hole.radius
-                - self.size * 0.5
-            )
-
-            if dist < 1:
-                continue
-
-            if dist < desired_dist:
-
-                strength = (
-                    desired_dist - dist
-                ) / desired_dist
-
-                force += (
-                    offset.get_normalised()
-                    * strength
-                )
-
-        return force
-
     def follow_path(self, path, delta, speed=1.0):
-
         if not path or len(path) == 0:
             return False
-
         lookahead_index = min(2, len(path) - 1)
         target = path[lookahead_index]
-
         to_target = target - self.pos
-
         if to_target.length() < 5:
             return True
-
         path_dir = to_target.get_normalised()
-
-        # ----------------------------
         # Separation steering
-        # ----------------------------
-
         sep_force = self.separation_force()
         wall_force = self.wall_avoidance_force(desired_dist=40)
         hole_force = self.hole_avoidance_force(desired_dist=40)
-
+        mine_force = self.mine_avoidance_force(desired_dist=160)
         desired_heading = (
             path_dir +
             wall_force * 1.5 +
             hole_force * 1.5 +
+            mine_force * 1.5 +
             sep_force * 2.0
         ).get_normalised()
-
         if desired_heading.length() > 0:
             desired_heading = desired_heading.get_normalised()
         else:
             desired_heading = self.heading
-
-        # ----------------------------
         # Existing heading steering
-        # ----------------------------
-
         self.heading = (
             self.heading +
             (desired_heading - self.heading) * 0.15
         ).get_normalised()
-
         accel = self.heading * self.acceleration
-
         self.apply_movement(accel, delta)
-
         return True
     
-    
     def update_debug_buffers(self):
-
         # clear old buffer visuals
         if not hasattr(self, "debug_buffers"):
             self.debug_buffers = []
-
         for rect in self.debug_buffers:
             rect.delete()
         self.debug_buffers.clear()
-
         for agent in self.world.agents:
             if agent is self.world.player:
                 continue
-
             ax, ay, aw, ah = agent.get_buffer_aabb()
-
             rect = Rectangle(
                 ax,
                 ay,
@@ -686,28 +692,20 @@ class EnemyAgent(Agent):
                 color=(200, 80, 80),  # red = AI danger zone
                 batch=window.get_batch("info")
             )
-
             rect.opacity = 40  # make it translucent
             rect.anchor_x = 0
             rect.anchor_y = 0
-
             self.debug_buffers.append(rect)
 
     def update_debug_ray(self):
-
         for line in self.debug_lines:
             line.delete()
         self.debug_lines.clear()
-
         direction = self.turret_direction().get_normalised()
         origin = self.get_muzzle_position()
-
         path = self.simulate_bullet_path(origin, direction, max_bounces=1)
-
         unsafe = not self.is_shot_safe(direction)
-
         colour = (255, 60, 60, 255) if unsafe else (80, 220, 120, 255)
-
         for start, end in path:
             line = Line(
                 start.x, start.y,
@@ -717,25 +715,20 @@ class EnemyAgent(Agent):
             )
             line.width = 2
             self.debug_lines.append(line)
-
+            
     def render_path_debug(self):
         if not hasattr(self, "debug_path_lines"):
             self.debug_path_lines = []
-        
-
         # clear old
         for line in self.debug_path_lines:
             line.delete()
         self.debug_path_lines.clear()
-
         path = getattr(self, "path", None)
         if not path or len(path) < 2:
             return
-
         for i in range(len(path) - 1):
             a = path[i]
             b = path[i + 1]
-
             line = Line(
                 a.x, a.y,
                 b.x, b.y,
@@ -743,5 +736,4 @@ class EnemyAgent(Agent):
                 batch=window.get_batch("info")
             )
             line.width = 2
-
             self.debug_path_lines.append(line)

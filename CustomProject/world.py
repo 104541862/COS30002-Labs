@@ -12,6 +12,7 @@ import pyglet
 from graphics import COLOUR_NAMES, window
 from agent import PlayerAgent, EnemyAgent
 from projectile import Projectile
+from mine import Mine, Explosion
 from time import time
 from map_loader import MapLoader
 import math
@@ -79,6 +80,8 @@ class World(object):
         # Simulation entities
         self.agents = []
         self.projectiles = []
+        self.mines = []
+        self.explosions = []
 
         # Load map data from file
         loader = MapLoader()
@@ -144,6 +147,71 @@ class World(object):
         # --- AGENTS ---
         for agent in self.agents:
             agent.update(delta)
+        
+        alive_mines = []
+
+        for mine in self.mines:
+            mine.update(delta)
+
+            # already exploded → skip
+            if getattr(mine, "exploded", False):
+                continue
+
+            # FUSE EXPIRY CHECK
+            if mine.is_expired():
+                self.explode_mine(mine)
+                mine.exploded = True
+                mine.destroy()
+                if mine.owner and hasattr(mine.owner, "active_mine"):
+                    if mine.owner.active_mine == mine:
+                        mine.owner.active_mine = None
+                continue
+
+            # only trigger if armed AND not expired
+            if mine.armed:
+                triggered = False
+
+                # agent trigger
+                for agent in self.agents:
+                    dx = agent.pos.x - mine.pos.x
+                    dy = agent.pos.y - mine.pos.y
+                    if dx*dx + dy*dy <= mine.radius * mine.radius:
+                        triggered = True
+                        break
+
+                # projectile trigger
+                if not triggered:
+                    for p in self.projectiles:
+                        dx = p.pos.x - mine.pos.x
+                        dy = p.pos.y - mine.pos.y
+                        if dx*dx + dy*dy <= mine.radius * mine.radius:
+                            triggered = True
+                            break
+
+                if triggered:
+                    self.explode_mine(mine)
+                    mine.exploded = True
+                    mine.destroy()
+                    if mine.owner and hasattr(mine.owner, "active_mine"):
+                        if mine.owner.active_mine == mine:
+                            mine.owner.active_mine = None
+                    continue
+
+            alive_mines.append(mine)
+
+        self.mines = alive_mines
+
+        alive_explosions = []
+
+        for e in self.explosions:
+            e.update(delta)
+
+            if e.alive():
+                alive_explosions.append(e)
+            else:
+                e.destroy()
+
+        self.explosions = alive_explosions
 
         # --- PROJECTILES ---
         alive_projectiles = []
@@ -167,7 +235,7 @@ class World(object):
                 if hit_agent in self.agents:
                     self.agents.remove(hit_agent)
 
-                projectile.shape.delete()
+                projectile.destroy()
 
                 if projectile.owner and projectile in projectile.owner.projectiles:
                     projectile.owner.projectiles.remove(projectile)
@@ -221,7 +289,7 @@ class World(object):
                 projectile.bounce_count > projectile.max_bounces
                 or projectile in to_remove
             ):
-                projectile.shape.delete()
+                projectile.destroy()
 
                 if projectile.owner and projectile in projectile.owner.projectiles:
                     projectile.owner.projectiles.remove(projectile)
@@ -301,6 +369,50 @@ class World(object):
                 damage=shot["damage"]
             )
             self.projectiles.append(projectile)
+
+    def explode_mine(self, mine):
+
+        # HARD GUARD: prevents double explosion
+        if getattr(mine, "exploded", False):
+            return
+
+        mine.exploded = True
+
+        blast_radius = mine.radius
+
+        # visual explosion (1-frame entity handled elsewhere)
+        explosion = Explosion(mine.pos.copy(), blast_radius)
+        self.explosions.append(explosion)
+
+        # --- collect hits ---
+        to_remove_agents = []
+        to_remove_projectiles = []
+
+        for agent in self.agents:
+            dx = agent.pos.x - mine.pos.x
+            dy = agent.pos.y - mine.pos.y
+            if dx*dx + dy*dy <= blast_radius*blast_radius:
+                to_remove_agents.append(agent)
+
+        for p in self.projectiles:
+            dx = p.pos.x - mine.pos.x
+            dy = p.pos.y - mine.pos.y
+            if dx*dx + dy*dy <= blast_radius*blast_radius:
+                to_remove_projectiles.append(p)
+
+        # --- remove agents ---
+        for a in to_remove_agents:
+            a.destroy()
+            if a in self.agents:
+                self.agents.remove(a)
+
+        # --- remove projectiles safely ---
+        for p in to_remove_projectiles:
+            if p in self.projectiles:
+                self.projectiles.remove(p)
+
+            if hasattr(p, "destroy"):
+                p.destroy()
 
     def projectile_wall_collision(self, projectile):
         for wall in self.wall_rects:
@@ -466,6 +578,7 @@ class World(object):
             pyglet.window.key.S: ("S", True),
             pyglet.window.key.A: ("A", True),
             pyglet.window.key.D: ("D", True),
+            pyglet.window.key.E: ("E", True),
             pyglet.window.key.SPACE: (" ", True),
         }
 
@@ -483,6 +596,7 @@ class World(object):
             pyglet.window.key.S: "S",
             pyglet.window.key.A: "A",
             pyglet.window.key.D: "D",
+            pyglet.window.key.E: "E",
             pyglet.window.key.SPACE: " ",
         }
 

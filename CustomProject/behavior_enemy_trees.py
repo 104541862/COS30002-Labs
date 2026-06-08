@@ -177,6 +177,12 @@ YELLOW_MOVEMENT_TREE = Selector([
 
 YELLOW_COMBAT_TREE = Selector([
     Sequence([
+        CanPlaceMine(),
+        RandomChance(0.001),   # occasional trap laying
+        PlaceMine()
+    ]),
+
+    Sequence([
         HasLineOfSight(lambda a: a.world.player),
 
         AimAt(
@@ -186,7 +192,7 @@ YELLOW_COMBAT_TREE = Selector([
         ),
 
         CanShoot(),
-        RandomChance(0.2),   # more aggressive than grey/teal
+        RandomChance(0.2),
         Shoot()
     ]),
 
@@ -229,18 +235,33 @@ GREEN_COMBAT_TREE = Selector([
     Sequence([
         HasLineOfSight(lambda a: a.world.player),
 
-        AimAt(
-            lambda a: a.world.player,
-            smooth=0.15,
-            noise=0.4   # intentionally messy aim
-        ),
+        Action(lambda a, d: setattr(
+            a.turret,
+            "rotation",
+            -math.degrees(
+                math.atan2(
+                    a.world.player.pos.y - a.pos.y,
+                    a.world.player.pos.x - a.pos.x
+                )
+            )
+        )),
+
+        Action(lambda a, d: setattr(
+            a,
+            "_green_shot_dir",
+            a.find_bounce_shot()
+        )),
+
+        Condition(lambda a: getattr(a, "_green_shot_dir", None) is not None),
 
         CanShoot(),
 
-        RandomChance(0.25),
+        RandomChance(0.35),
+
         Shoot()
     ]),
 
+    # fallback: no randomness wandering aim
     Action(lambda a, d: a.update_turret_sway(d))
 ])
 
@@ -347,16 +368,22 @@ BLACK_MOVEMENT_TREE = Selector([
 
 BLACK_COMBAT_TREE = Selector([
     Sequence([
+        CanPlaceMine(),
+        RandomChance(0.05),   # more frequent trap placement
+        PlaceMine()
+    ]),
+
+    Sequence([
         HasLineOfSight(lambda a: a.world.player),
 
         AimAt(
             lambda a: a.world.player,
-            smooth=0.45,   # very stable aim
+            smooth=0.45,
             noise=0.02
         ),
 
         CanShoot(),
-        RandomChance(0.5),  # deadly when LOS exists
+        RandomChance(0.5),
         Shoot()
     ]),
 
