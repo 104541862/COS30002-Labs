@@ -103,7 +103,7 @@ GREY_MOVEMENT_TREE = Selector([
         Condition(lambda a: a.path_timer <= 0),
 
         Action(lambda a, d: setattr(a, "path", grey_path(a))),
-        Action(lambda a, d: setattr(a, "path_timer", 1.0)),
+        Action(lambda a, d: setattr(a, "path_timer", 2.0)),
     ]),
 
     Sequence([
@@ -137,7 +137,7 @@ TEAL_MOVEMENT_TREE = Selector([
         # Teal repositions occasionally even when not pressured
         RandomChance(0.02),
         Action(lambda a, d: setattr(a, "path", grey_path(a))),
-        Action(lambda a, d: setattr(a, "path_timer", 0.2)),
+        Action(lambda a, d: setattr(a, "path_timer", 2.0)),
     ]),
 
     Sequence([
@@ -167,7 +167,7 @@ YELLOW_MOVEMENT_TREE = Selector([
     Sequence([
         RandomChance(0.03),
         Action(lambda a, d: setattr(a, "path", grey_path(a))),
-        Action(lambda a, d: setattr(a, "path_timer", 0.2)),
+        Action(lambda a, d: setattr(a, "path_timer", 2.0)),
     ]),
 
     Sequence([
@@ -198,7 +198,7 @@ RED_MOVEMENT_TREE = Selector([
         # red rarely repositions
         RandomChance(0.01),
         Action(lambda a, d: setattr(a, "path", grey_path(a))),
-        Action(lambda a, d: setattr(a, "path_timer", 0.2)),
+        Action(lambda a, d: setattr(a, "path_timer", 2.0)),
     ]),
 
     Sequence([
@@ -249,7 +249,7 @@ PURPLE_MOVEMENT_TREE = Selector([
         # purple repositions more defensively
         RandomChance(0.05),
         Action(lambda a, d: setattr(a, "path", grey_path(a))),
-        Action(lambda a, d: setattr(a, "path_timer", 0.2)),
+        Action(lambda a, d: setattr(a, "path_timer", 2.0)),
     ]),
 
     Sequence([
@@ -296,7 +296,7 @@ WHITE_MOVEMENT_TREE = Selector([
             grey_path(a)   # reuse grey logic for now as fallback
         )),
 
-        Action(lambda a, d: setattr(a, "path_timer", 0.2)),
+        Action(lambda a, d: setattr(a, "path_timer", 2.0)),
     ]),
 
     Sequence([
@@ -337,7 +337,7 @@ BLACK_MOVEMENT_TREE = Selector([
     Sequence([
         RandomChance(0.01),
         Action(lambda a, d: setattr(a, "path", grey_path(a))),
-        Action(lambda a, d: setattr(a, "path_timer", 0.2)),
+        Action(lambda a, d: setattr(a, "path_timer", 2.0)),
     ]),
 
     Sequence([
