@@ -703,11 +703,18 @@ class EnemyAgent(Agent):
     def follow_path(self, path, delta, speed=1.0):
         if not path or len(path) == 0:
             return False
+        if isinstance(path, Vector2D):
+            return False        
+        if not isinstance(path, (list, tuple)) or len(path) == 0:
+            return False
+        
         lookahead_index = min(2, len(path) - 1)
         target = path[lookahead_index]
+
         to_target = target - self.pos
         if to_target.length() < 5:
             return True
+        
         path_dir = to_target.get_normalised()
         # Separation steering
         sep_force = self.separation_force()
@@ -804,14 +811,15 @@ class EnemyAgent(Agent):
             self.debug_path_lines = []
 
         path = getattr(self, "path", None)
-        if not path or len(path) < 2:
+
+        # ensure path is a list of Vector2D
+        if not isinstance(path, list) or len(path) < 2:
             for line in self.debug_path_lines:
                 line.visible = False
             return
 
         required = len(path) - 1
 
-        # reuse existing lines
         while len(self.debug_path_lines) < required:
             line = Line(
                 0, 0, 0, 0,
@@ -821,7 +829,6 @@ class EnemyAgent(Agent):
             line.width = 2
             self.debug_path_lines.append(line)
 
-        # update only needed
         for i in range(required):
             a = path[i]
             b = path[i + 1]
@@ -831,6 +838,5 @@ class EnemyAgent(Agent):
             line.x2, line.y2 = b.x, b.y
             line.visible = True
 
-        # hide leftovers
         for i in range(required, len(self.debug_path_lines)):
             self.debug_path_lines[i].visible = False
