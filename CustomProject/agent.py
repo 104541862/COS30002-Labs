@@ -345,6 +345,19 @@ class EnemyAgent(Agent):
         # Debugging
         self.debug_lines = []
 
+        for _ in range(2):
+            line = Line(
+                0, 0,
+                0, 0,
+                color=(0, 255, 0),
+                batch=window.get_batch("info")
+            )
+
+            line.width = 2
+            line.visible = False
+
+            self.debug_lines.append(line)
+
     def update(self, delta):
         if self.fire_cooldown > 0:
             self.fire_cooldown -= delta
@@ -558,39 +571,87 @@ class EnemyAgent(Agent):
             if alignment > 0.97:
                 danger += 1.0 / max(dist, 1.0)
         return danger
+    
     def separation_force(self, desired_dist=80.0):
         force = Vector2D()
+        desired_sq = desired_dist * desired_dist
+
         for other in self.world.agents:
+
             if other is self:
                 continue
+
             if other is self.world.player:
                 continue
+
             offset = self.pos - other.pos
-            dist = offset.length()
+
+            dist_sq = offset.lengthSq()
+
+            if dist_sq > desired_sq:
+                continue
+
+            dist = math.sqrt(dist_sq)
+
             if dist < 0.001:
                 continue
+
+            strength = 1.0 - (dist / desired_dist)
+
+            force += offset.get_normalised() * strength
+
+        return force
+    
+    def wall_avoidance_force(self, desired_dist=50.0):
+
+        force = Vector2D()
+
+        nearby_walls = self.world.grid.nearby_walls(
+            self.pos,
+            radius_cells=1
+        )
+
+        for wall in nearby_walls:
+
+            closest_x = max(
+                wall.x,
+                min(
+                    self.pos.x,
+                    wall.x + wall.width
+                )
+            )
+
+            closest_y = max(
+                wall.y,
+                min(
+                    self.pos.y,
+                    wall.y + wall.height
+                )
+            )
+
+            offset = self.pos - Vector2D(
+                closest_x,
+                closest_y
+            )
+
+            radius = self.size * 0.5
+
+            dist = offset.length() - radius
+
+            if dist < 1:
+                continue
+
             if dist < desired_dist:
-                strength = 1.0 - (dist / desired_dist)
+
+                strength = (
+                    desired_dist - dist
+                ) / desired_dist
+
                 force += (
                     offset.get_normalised()
                     * strength
                 )
-        return force
-    
-    def wall_avoidance_force(self, desired_dist=50.0):
-        force = Vector2D()
-        for wall in self.world.wall_rects:
-            # closest point on wall AABB
-            closest_x = max(wall.x, min(self.pos.x, wall.x + wall.width))
-            closest_y = max(wall.y, min(self.pos.y, wall.y + wall.height))
-            offset = self.pos - Vector2D(closest_x, closest_y)
-            radius = self.size * 0.5
-            dist = offset.length() - radius
-            if dist < 1:
-                continue
-            if dist < desired_dist:
-                strength = (desired_dist - dist) / desired_dist
-                force += offset.get_normalised() * strength
+
         return force
 
     def hole_avoidance_force(self, desired_dist=60.0):
@@ -698,42 +759,78 @@ class EnemyAgent(Agent):
             self.debug_buffers.append(rect)
 
     def update_debug_ray(self):
-        for line in self.debug_lines:
-            line.delete()
-        self.debug_lines.clear()
+
         direction = self.turret_direction().get_normalised()
         origin = self.get_muzzle_position()
-        path = self.simulate_bullet_path(origin, direction, max_bounces=1)
+
+        path = self.simulate_bullet_path(
+            origin,
+            direction,
+            max_bounces=1
+        )
+
         unsafe = not self.is_shot_safe(direction)
-        colour = (255, 60, 60, 255) if unsafe else (80, 220, 120, 255)
-        for start, end in path:
-            line = Line(
-                start.x, start.y,
-                end.x, end.y,
-                color=colour,
-                batch=window.get_batch("info")
-            )
-            line.width = 2
-            self.debug_lines.append(line)
+
+        colour = (
+            (255, 60, 60)
+            if unsafe
+            else (80, 220, 120)
+        )
+
+        # hide everything first
+        for line in self.debug_lines:
+            line.visible = False
+
+        # update only required segments
+        for i, (start, end) in enumerate(path):
+
+            if i >= len(self.debug_lines):
+                break
+
+            line = self.debug_lines[i]
+
+            line.x = start.x
+            line.y = start.y
+
+            line.x2 = end.x
+            line.y2 = end.y
+
+            line.color = colour
+
+            line.visible = True
             
     def render_path_debug(self):
         if not hasattr(self, "debug_path_lines"):
             self.debug_path_lines = []
-        # clear old
-        for line in self.debug_path_lines:
-            line.delete()
-        self.debug_path_lines.clear()
+
         path = getattr(self, "path", None)
         if not path or len(path) < 2:
+            for line in self.debug_path_lines:
+                line.visible = False
             return
-        for i in range(len(path) - 1):
-            a = path[i]
-            b = path[i + 1]
+
+        required = len(path) - 1
+
+        # reuse existing lines
+        while len(self.debug_path_lines) < required:
             line = Line(
-                a.x, a.y,
-                b.x, b.y,
-                color=(80, 160, 255, 255),  # blue = navigation path
+                0, 0, 0, 0,
+                color=(80, 160, 255, 255),
                 batch=window.get_batch("info")
             )
             line.width = 2
             self.debug_path_lines.append(line)
+
+        # update only needed
+        for i in range(required):
+            a = path[i]
+            b = path[i + 1]
+            line = self.debug_path_lines[i]
+
+            line.x, line.y = a.x, a.y
+            line.x2, line.y2 = b.x, b.y
+            line.visible = True
+
+        # hide leftovers
+        for i in range(required, len(self.debug_path_lines)):
+            self.debug_path_lines[i].visible = False

@@ -25,7 +25,9 @@ class Grid:
         self.width = int(world.cx // cell_size)
         self.height = int(world.cy // cell_size)
 
+        self.cell_walls = {}
         self._build_grid()
+        self._build_wall_lookup()
 
     def _build_grid(self):
         for x in range(self.width):
@@ -36,6 +38,43 @@ class Grid:
                 walkable = not self.world.point_in_wall(world_x, world_y) and not self.world.point_in_hole(world_x, world_y)
 
                 self.nodes[(x, y)] = GridNode(x, y, walkable)
+
+    def _build_wall_lookup(self):
+
+        for wall in self.world.wall_rects:
+
+            min_x = int(wall.x // self.cell_size)
+            max_x = int((wall.x + wall.width) // self.cell_size)
+
+            min_y = int(wall.y // self.cell_size)
+            max_y = int((wall.y + wall.height) // self.cell_size)
+
+            for gx in range(min_x, max_x + 1):
+                for gy in range(min_y, max_y + 1):
+
+                    self.cell_walls.setdefault(
+                        (gx, gy),
+                        []
+                    ).append(wall)
+    
+    def nearby_walls(self, pos, radius_cells=1):
+
+        cx = int(pos.x // self.cell_size)
+        cy = int(pos.y // self.cell_size)
+
+        result = []
+
+        for dx in range(-radius_cells, radius_cells + 1):
+            for dy in range(-radius_cells, radius_cells + 1):
+
+                cell = (cx + dx, cy + dy)
+
+                if cell in self.cell_walls:
+                    result.extend(
+                        self.cell_walls[cell]
+                    )
+
+        return result
 
     def node_from_world(self, pos):
         return (int(pos.x // self.cell_size), int(pos.y // self.cell_size))
